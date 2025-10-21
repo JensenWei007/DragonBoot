@@ -25,5 +25,3 @@ sudo rm go
 sudo ln -s ../lib/go-1.24.6/bin/go go
 
 echo "安装完成!"
-
-sudo rm go1.24.6.linux-amd64.tar.gz

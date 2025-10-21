@@ -45,6 +45,75 @@ sudo ./go_install.sh
 
 安装完成后可以使用 `go version` 查看是否可以正常找到.
 
-### u-root 构建
+### Linux 构建
+
+为了能够运行 kexec 功能, 我们需要一个内核, 这里选用 Linux 6.15.4, 当然, 其他版本也是可以的, 如果你没有现成的编译好的内核, 可以跟随下面的步骤构建:
+
+首先拉取源码并解压:
+
+```bash
+wget https://www.kernel.org/pub/linux/kernel/v6.x/linux-6.15.4.tar.xz
+tar -xf linux-6.15.4.tar.xz
+```
+
+这里使用默认内核配置, 开始编译:
+
+```bash
+cd linux-6.15.4
+make defconfig
+make -j12
+```
+
+我们需要的内核位于`arch/x86/boot/bzImage`, 这是待会包括进 initram 的内核文件.
+
+### u-root 安装
+
+我们需要安装 u-root 工具, 首先配置环境变量:
+
+```bash
+mkdir go
+export GOPATH="{path to pwd}/go"
+export PATH="$PATH:$GOPATH/bin"
+```
+
+随后下载并安装 u-root:
+
+```bash
+git clone https://github.com/u-root/u-root
+cd u-root
+go install
+```
+
+随后在 `u-root` 目录下执行构建命令:
+
+```bash
+u-root -uinitcmd="kexec --loadsyscall ./bzImage" -files {path to bzImage}:./bzImage core
+```
+
+现在我们得到了一个 `.cpio` 文件, DragonOS 支持 xz 压缩的 cpio 格式, 我们再对其进行压缩:
+
+```bash
+xz --check=crc32 --lzma2=dict=512KiB /tmp/initramfs.linux_amd64.cpio
+```
+
+### 配置并启动内核
+
+确保你能够构建并运行 x86 架构的 DragonOS, 详细过程见对应仓库.
+
+首先打开内核的配置, 在 cargo.toml 中启用 `initram` 的 feature(可以把他加到 default 中).
+
+随后将刚刚的压缩文件移到 `DragonOS/kernel/initram` 目录下, 并使用架构重命令:
+
+```bash
+cp /tmp/initramfs.linux_amd64.cpio.xz ~/DragonOS/kernel/initram/x86.cpio.xz
+```
+
+此时即可使用 `make build` 构建内核.
+
+随后修改 `tools/run-qemu.sh` 脚本, 在 243 行取消多核启动参数 `-smp ${QEMU_SMP}`, 当前内核还未适配多 cpu 核心的情况.
+
+所有事情执行完成之后, 可以通过命令 `make qemu-nographic` 启动了.
+
+## 项目目前存在的 BUG 与暂时性的补丁
 
 
