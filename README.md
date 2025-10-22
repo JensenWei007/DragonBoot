@@ -45,6 +45,8 @@ sudo ./go_install.sh
 
 安装完成后可以使用 `go version` 查看是否可以正常找到.
 
+> 请注意查看[项目目前存在的 BUG 与暂时性的补丁中 go runtime 的更改](#go-runtime)，对 go 源码做一定的更改。
+
 ### Linux 构建
 
 为了能够运行 kexec 功能, 我们需要一个内核, 这里选用 Linux 6.15.4, 当然, 其他版本也是可以的, 如果你没有现成的编译好的内核, 可以跟随下面的步骤构建:
@@ -84,6 +86,8 @@ cd u-root
 go install
 ```
 
+> 请注意查看[项目目前存在的 BUG 与暂时性的补丁中 u-root 的更改](#u-root)，对 u-root 源码做一定的更改。
+
 随后在 `u-root` 目录下执行构建命令:
 
 ```bash
@@ -102,7 +106,7 @@ xz --check=crc32 --lzma2=dict=512KiB /tmp/initramfs.linux_amd64.cpio
 
 首先打开内核的配置, 在 cargo.toml 中启用 `initram` 的 feature(可以把他加到 default 中).
 
-随后将刚刚的压缩文件移到 `DragonOS/kernel/initram` 目录下, 并使用架构重命令:
+随后将刚刚的压缩文件移到 `DragonOS/kernel/initram` 目录下, 并使用架构重命名:
 
 ```bash
 cp /tmp/initramfs.linux_amd64.cpio.xz ~/DragonOS/kernel/initram/x86.cpio.xz
@@ -116,4 +120,37 @@ cp /tmp/initramfs.linux_amd64.cpio.xz ~/DragonOS/kernel/initram/x86.cpio.xz
 
 ## 项目目前存在的 BUG 与暂时性的补丁
 
+### go runtime
 
+目前 DragonOS 对 netpoll_epoll 的支持尚不完善，不能正常实现系统调用的功能，导致 go runtime 的 poll 线程会抛出错误，使得整个进程结束。
+
+需要对 go 源码做一定的修改，在 go 的源码目录(如果你使用的是 `go_install.sh` 安装的, 那么在 `/usr/lib/go-1.24.6`)中，修改 `src/runtime/netpoll_epoll.go`:
+
+```go
+// Line 122
+
+if errno != _EINTR {
+    //      println("runtime: epollwait on fd", epfd, "failed with", errno)
+    //      throw("runtime: netpoll failed")
+}
+```
+
+在 122 行注释掉抛出错误, 最好添加一行 `return gList{}, 0` 来返回暂未准备好的结果让线程休眠。
+
+### u-root
+
+因为 Linux 对根文件系统的初始化是由根文件系统中的 `init` 来完成的，如挂载 `dev/` `sys/` 等文件夹。但是 DragonOS 默认在进入用户态之前就会自己挂载这些文件夹初始化，所以二者存在一定的行为差距。
+
+u-root 的 init 程序会执行挂载和初始化 rootfs 的部分，这对 Linux 来说是没问题且必须的，但 DragonOS 并不需要且目前 DragonOS 也不支持这些功能。
+
+因此需要对 u-root 的源码进行更改，注释掉此部分，具体在 u-root 源码目录的 `cmds/core/init/init.go`:
+
+```go
+// Line 58
+
+//libinit.SetEnv()
+//libinit.CreateRootfs()
+libinit.NetInit()
+```
+
+在 58 行注释掉 `libinit.SetEnv()` 和 `libinit.CreateRootfs()`。
